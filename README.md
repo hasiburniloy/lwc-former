@@ -1,80 +1,141 @@
 # LWC-former
 
-Spectral transformer that predicts leaf water content (relative water content, RWC) of blueberry plants from canopy hyperspectral reflectance (514–1000 nm).
+Transformer that predicts leaf water content (LWC, measured as relative water content RWC) of blueberry plants from canopy hyperspectral reflectance.
 
-Code for: Rahman, M. H., Busby, S., Ru, S., Hanif, S., Sanz-Saez, A., Zheng, J., Rehman, T. U. (2025). *Transformer-based hyperspectral image analysis for phenotyping drought tolerance in blueberries*. **Computers and Electronics in Agriculture** 228:109684, doi:[10.1016/j.compag.2024.109684](https://doi.org/10.1016/j.compag.2024.109684).
+Official code for:
 
-No data is included; see [Data format](#data-format).
+> Rahman, M. H., Busby, S., Ru, S., Hanif, S., Sanz-Saez, A., Zheng, J., Rehman, T. U. (2025). **Transformer-based hyperspectral image analysis for phenotyping drought tolerance in blueberries.** *Computers and Electronics in Agriculture*, 228, 109684. [doi:10.1016/j.compag.2024.109684](https://doi.org/10.1016/j.compag.2024.109684)
 
-## How it works
+This repository contains the preprocessing pipeline, model, training and prediction code with the paper's configuration. No data is included (see [Data](#data)).
 
-The preprocessed spectrum is cut into non-overlapping patches of 13 bands. Each patch is projected to an 8-dimensional token by its own linear map (patch-based dimensionality reduction, PDR: `H_i = b_i + X_i W_i` with a separate `W_i`, `b_i` per patch). Sinusoidal positional encoding is added, three post-norm transformer encoder layers (2 heads, feed-forward 32) mix the tokens, the tokens are flattened, and an MLP head (64, 64, 32; BatchNorm, ReLU, dropout 0.4) regresses RWC. Training is mini-batch (32) with Adam, weight decay 1e-3, a triangular cyclic learning rate and early stopping on validation RMSE.
+## Architecture
 
-Data pipeline (`common/`):
+LWC-former has four components: (1) a Patch-based Dimensionality Reduction (PDR) unit, (2) positional embedding, (3) transformer encoder layers and (4) a regression head.
 
-1. Stratified 85:15 test split, made first and never augmented or balanced.
-2. Optional SMOTE-ENN balancing of the train-val set (`balance.enabled`, off by default; low vs high RWC at `balance.threshold`).
-3. Offset/slope augmentation, 5 copies per spectrum (offset 6 % of the band std, slope ±5 %).
-4. Group-aware 70:30 train/val split (copies of one plant stay on one side).
-5. log10(1/R) → multiplicative scatter correction → mean-centring, fitted on the training split only.
-6. Target standardised with the training mean and std; metrics are reported in original units.
+![LWC-former architecture (paper Fig. 6)](docs/lwc_former_architecture.png)
+
+*Fig. 6 of the paper. Λ is the number of spectral bands, P the patch size and d the embedding dimension.*
+
+1. **PDR.** The preprocessed spectrum `X ∈ R^Λ` is segmented into `Λ/P` non-overlapping patches of `P` adjacent bands. Each patch `i` is projected to a `d`-dimensional token by its own linear map, `H_i = b_i + X_i W_i` with `W_i ∈ R^(P×d)`, `d < P` (Kaiming-uniform initialisation). This reduces the multicollinearity of neighbouring bands and produces a token sequence `H ∈ R^(Λ/P × d)`.
+2. **Positional embedding.** Sinusoidal sine/cosine encoding of the patch position is added to each token.
+3. **Transformer encoder × 3.** Each layer: multi-head self-attention `softmax(QKᵀ/√d)V` with residual connection and layer normalisation, then a two-layer feed-forward network with ReLU, residual connection and layer normalisation.
+4. **Regression head.** The encoded tokens are pooled and flattened, then passed through an MLP with 64, 64 and 32 hidden units, each with batch normalisation, ReLU and dropout (40 %), and a final linear layer outputs LWC.
 
 ```
-spectrum (180) -> patches (13 x 13) -> PDR (13 x 8) -> +pos -> Encoder x 3 -> flatten -> MLP 64-64-32 -> RWC
-                  each patch has its own W_i, b_i
+reflectance (1 x Λ) ─► log10(1/R), MSC, mean-centre
+      ─► PDR: Λ/P patches of P bands, each ─► d-dim token (own W_i, b_i)
+      ─► + positional embedding
+      ─► Transformer encoder × 3 (self-attention, FFN, residual + LayerNorm)
+      ─► pool / flatten
+      ─► MLP 64 ─► 64 ─► 32 (BatchNorm, ReLU, dropout 0.4) ─► Linear ─► LWC
 ```
 
-## Install
+| hyperparameter | value (paper) |
+|---|---|
+| patch size P | 13 |
+| embedding dimension d | 8 |
+| encoder layers | 3 |
+| attention heads | 2 |
+| regression head | 64, 64, 32; dropout 0.4 |
+| loss | MSE on standardised target |
+| optimiser | Adam, weight decay 1e-3 |
+| learning rate | triangular cyclic (1e-5 to 1e-3) |
+| batch size | 32 |
+| augmentation | random offset (6 % of band std) and slope (±5 %), 5 copies |
+
+The paper selected this configuration by grid search over encoder layers (1–5), patch size (4–24), embedding dimension (2–18), attention heads (1–5) and head widths (16–128). The `pooling` key in the config chooses between `flatten` (default), `mean` (global average pooling) and `cls`.
+
+### Training pipeline
+
+1. Stratified 85:15 hold-out test split (by treatment and day), made before any balancing or augmentation.
+2. Optional SMOTE-ENN balancing of the train-val set (`balance.enabled`; low vs high LWC at `balance.threshold`). The paper used it; set `balance.enabled: true` to follow the paper.
+3. Offset/slope augmentation of the train-val spectra, 5 copies per spectrum (`augmentation.mode: static`, the paper's protocol; `online` jitters every mini-batch afresh instead).
+4. 70:30 train/validation split (group-aware, so copies of one spectrum stay on one side).
+5. log10(1/R) → MSC → mean-centring fitted on the training split only; target standardised with the training mean and std.
+6. Mini-batch training with early stopping on validation RMSE; metrics are reported in original units.
+7. Test and new spectra are preprocessed with the stored training statistics (`predict.py`).
+
+## Installation
 
 ```bash
-pip install -r requirements.txt
+git clone https://github.com/hasiburniloy/lwc-former.git
+cd lwc-former
+pip install -e .
 ```
 
-PyTorch may need a platform-specific install; see [pytorch.org](https://pytorch.org).
+PyTorch may need a platform-specific install; see [pytorch.org](https://pytorch.org/get-started/locally/). Tested with Python 3.9–3.12 and PyTorch ≥ 2.0.
 
-## Data format
+## Data
 
-One row per plant, `.xlsx` or `.csv`: metadata columns (e.g. `Day`, `PlantID`, `Genotype`, `Treatment`), the target column `RWC`, then reflectance columns whose headers are wavelengths in nm (values in (0, 1]). Spectral columns are detected automatically as the numeric-named columns; `data.spectral_columns` and `data.wavelength_range` in `config.yaml` can restrict them. If your table has no `Treatment`/`Day` columns, set `data.stratify_columns: []`. Details in `data/README.md`.
+Data files are not part of this repository. Provide one table, one row per plant, `.xlsx` or `.csv`:
 
-## Train
+| Day | PlantID | Genotype | Treatment | RWC | 514 | 516 | … | 1000 |
+|---|---|---|---|---|---|---|---|---|
 
-Run from the repo root.
+- Reflectance columns: headers are wavelengths in nm, values in (0, 1]. They are detected automatically as the numeric-named columns; `data.spectral_columns` / `data.wavelength_range` in the config can restrict them.
+- The target column is `RWC` (`data.target_columns`); metadata columns are anything else. `data.stratify_columns` (default `[Treatment, Day]`) must exist, or be set to `[]`.
+
+A synthetic table with the right layout can be generated for a dry run:
+
+```bash
+python scripts/make_example_data.py --out example_data.csv
+```
+
+## Usage
+
+Run from the repository root.
+
+**Train**
 
 ```bash
 python -m lwc_former.train --config lwc_former/config.yaml --data path/to/data.xlsx --out runs/lwc_former
 ```
 
-Any config value can be overridden: `--set model.patch_size=10 --set model.embed_dim=6 --set training.epochs=500`.
+Any config value can be overridden on the command line: `--set model.patch_size=10 --set model.embed_dim=6 --set balance.enabled=true`. Test sets are small, so `--repeat-splits 5` repeats the whole run on five different test splits and reports mean ± std.
 
-Test sets are small, so a single split is noisy. `--repeat-splits 5` runs the first 5 of the split seeds `[42, 7, 123, 2024, 99, 11, 3, 77, 500, 2025]` (or set `data.split_seed` to a list) and reports mean ± std over splits:
+Outputs per run (`runs/lwc_former/seed_<s>/`, or `split_<ss>/seed_<s>/` with several test splits): `model.pt` (weights and fitted preprocessing), `metrics.json` (train / val / test R² and RMSE, original units), `predictions_{train,val,test}.csv`, `metrics_test_by_Day.json`, `parity_plot.png`, `loss_curve.png`; `summary.json` aggregates all runs.
 
-```bash
-python -m lwc_former.train --config lwc_former/config.yaml --data path/to/data.xlsx --out runs/lwc_former --repeat-splits 5
-```
-
-Outputs per run (`runs/lwc_former/seed_<s>/`, or `split_<ss>/seed_<s>/` with several split seeds): `model.pt` (weights and fitted preprocessing), `metrics.json` (train / val / test R2 and RMSE, original units), `predictions_{train,val,test}.csv`, `metrics_test_by_Day.json`, `parity_plot.png`, `loss_curve.png`. `summary.json` has mean and std across all runs and a `per_split` block.
-
-## Predict
+**Predict**
 
 ```bash
 python -m lwc_former.predict --model runs/lwc_former/seed_42/model.pt --data new_spectra.xlsx --out predictions.csv
 ```
 
-The new file needs the same spectral columns as training. New spectra are preprocessed with the training statistics stored in `model.pt`. Output has the non-spectral columns plus `RWC_predicted`; R2/RMSE are printed if `RWC` is present.
+The new file needs the same spectral columns as training. The output has the non-spectral columns plus `RWC_predicted`; R² and RMSE are printed if `RWC` is present.
+
+**Test**
+
+```bash
+pytest -q
+```
 
 ## Configuration
 
-All keys are documented in `lwc_former/config.yaml`. Main groups: `model` (patch_size, embed_dim, n_layers, n_heads, ff_dim, attn_dropout, head_hidden, head_dropout, pooling flatten|mean|cls, use_cls, tail drop|pad), `training` (batch_size, optimizer adam|adamw, weight_decay, loss mse|huber, scheduler cyclic|onecycle|cosine|none, base_lr, max_lr, step_size_up in epochs, grad_clip, epochs, early_stopping_patience), `data`, `balance`, `augmentation` (mode static|online, n_copies, offset_percent, slope_variation), `split`, `seeds`.
+All keys are documented in [`lwc_former/config.yaml`](lwc_former/config.yaml):
 
-`augmentation.mode: static` (default, the paper's protocol) draws fixed jittered copies once. `online` skips the copies and jitters every mini-batch afresh; validation and test always use clean spectra.
+| group | keys |
+|---|---|
+| `data` | path, filter, spectral_columns, wavelength_range, target_columns, stratify_columns, test_size, split_seed |
+| `balance` | enabled (SMOTE-ENN of train-val), target, threshold |
+| `augmentation` | enabled, mode static/online, n_copies, include_original, offset_percent, slope_variation |
+| `split` | val_size, group_aware |
+| `model` | patch_size, embed_dim, n_layers, n_heads, ff_dim, attn_dropout, head_hidden, head_dropout, pooling flatten/mean/cls, use_cls, tail drop/pad |
+| `training` | batch_size, optimizer adam/adamw, weight_decay, loss mse/huber, scheduler cyclic/onecycle/cosine/none, base_lr, max_lr, step_size_up, grad_clip, epochs, early_stopping_patience |
+| `seeds`, `output_dir` | training seeds; output folder |
 
-## Differences from the paper
+## Repository layout
 
-- SMOTE-ENN is applied after the test split and only to the train-val set, so the test set holds real spectra only. It is off by default because it did not improve held-out accuracy on our data; `--set balance.enabled=true` (with `balance.threshold` set for your RWC range) reproduces the paper's balancing.
-- The train/val split is group-aware (`split.group_aware: false` restores a random split).
-- Augmentation copies the target unchanged (no target jitter).
-- The cyclic learning rate is stepped every batch, with `step_size_up` given in epochs.
-- Early stopping on validation RMSE (patience 100), best weights restored.
+```
+lwc_former/
+  common/         shared pipeline: io, preprocessing, augment, balance, split, dataset, metrics, utils
+  model.py        LWCFormer (PDR, positional embedding, encoder, regression head)
+  train.py        training / evaluation CLI
+  predict.py      prediction CLI for new spectra
+  config.yaml     paper configuration
+scripts/make_example_data.py   synthetic table for a dry run
+tests/            smoke tests on synthetic data
+docs/             figures
+```
 
 ## Citation
 
@@ -92,4 +153,4 @@ All keys are documented in `lwc_former/config.yaml`. Main groups: `model` (patch
 
 ## License
 
-MIT, see `LICENSE`.
+MIT, see [`LICENSE`](LICENSE).

@@ -26,9 +26,9 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import torch
 
-from common import SplitData, get_device, load_config, prepare_dataset, set_seed
-from common.metrics import metrics_by_group, save_loss_curve, save_results, summarize_runs
-from common.utils import apply_overrides, ensure_dir, repeat_splits, split_seeds
+from lwc_former.common import SplitData, get_device, load_config, prepare_dataset, set_seed
+from lwc_former.common.metrics import metrics_by_group, save_loss_curve, save_results, summarize_runs
+from lwc_former.common.utils import apply_overrides, ensure_dir, repeat_splits, split_seeds
 
 from .model import LWCFormer
 

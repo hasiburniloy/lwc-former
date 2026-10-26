@@ -1,7 +1,7 @@
 # LWC-former default configuration (Rahman et al. 2025, Computers and Electronics in Agriculture 228:109684)
 
 data:
-  path: data/Combind_H_canopy.xlsx  # placeholder, data not committed (see data/README.md); override with --data
+  path: data/Combind_H_canopy.xlsx  # placeholder, data not committed (see README.md, Data); override with --data
   filter: null                 # optional row filter, e.g. {column: Treatment, values: [Mild stress]}
   spectral_columns: auto       # auto = all float-named columns; or [start, end] positional slice; or a list of names
   wavelength_range: null       # optional [lo, hi] in nm to keep only that range
@@ -11,7 +11,7 @@ data:
   split_seed: 42               # seed of the test split; an int or a list (e.g. [42, 7, 123]) to report over several test splits
 
 balance:
-  enabled: false               # SMOTE-ENN balancing of train-val. The paper used it (true reproduces the paper); off by default because it did not improve held-out accuracy on our data
+  enabled: false               # SMOTE-ENN balancing of train-val (the paper used it; set true to follow the paper)
   target: RWC                  # target column defining the low/high class
   threshold: 62                # class label = target < threshold
 

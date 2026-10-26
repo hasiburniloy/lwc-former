@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the article below."
+type: software
+title: "LWC-former"
+authors:
+  - family-names: Rahman
+    given-names: Md. Hasibur
+license: MIT
+repository-code: "https://github.com/hasiburniloy/lwc-former"
+preferred-citation:
+  type: article
+  title: "Transformer-based hyperspectral image analysis for phenotyping drought tolerance in blueberries"
+  authors:
+    - {family-names: Rahman, given-names: Md. Hasibur}
+    - {family-names: Busby, given-names: Savannah}
+    - {family-names: Ru, given-names: Sushan}
+    - {family-names: Hanif, given-names: Sajid}
+    - {family-names: Sanz-Saez, given-names: Alvaro}
+    - {family-names: Zheng, given-names: Jingyi}
+    - {family-names: Rehman, given-names: Tanzeel U.}
+  journal: "Computers and Electronics in Agriculture"
+  volume: 228
+  start: 109684
+  year: 2025
+  doi: "10.1016/j.compag.2024.109684"

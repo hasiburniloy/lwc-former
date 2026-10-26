@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lwc-former"
+version = "1.0.0"
+description = "LWC-former: spectral transformer predicting blueberry leaf water content from hyperspectral reflectance"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+authors = [{name = "Md. Hasibur Rahman"}]
+dynamic = ["dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+
+[tool.setuptools.packages.find]
+include = ["lwc_former*"]
+
+[tool.setuptools.package-data]
+lwc_former = ["config.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

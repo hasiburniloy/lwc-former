@@ -14,8 +14,8 @@ import numpy as np
 import pandas as pd
 import torch
 
-from common.io import load_table
-from common.metrics import score
+from lwc_former.common.io import load_table
+from lwc_former.common.metrics import score
 
 from .model import LWCFormer
 from .train import _predict
