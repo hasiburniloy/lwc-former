@@ -1,0 +1,60 @@
+# LWC-former default configuration (Rahman et al. 2025, Computers and Electronics in Agriculture 228:109684)
+
+data:
+  path: data/Combind_H_canopy.xlsx  # placeholder, data not committed (see data/README.md); override with --data
+  filter: null                 # optional row filter, e.g. {column: Treatment, values: [Mild stress]}
+  spectral_columns: auto       # auto = all float-named columns; or [start, end] positional slice; or a list of names
+  wavelength_range: null       # optional [lo, hi] in nm to keep only that range
+  target_columns: [RWC]        # traits to predict
+  stratify_columns: [Treatment, Day]            # columns forming the stratification key of the test split
+  test_size: 0.15              # fraction held out as the test set (split before any augmentation)
+  split_seed: 42               # seed of the test split; an int or a list (e.g. [42, 7, 123]) to report over several test splits
+
+balance:
+  enabled: false               # SMOTE-ENN balancing of train-val. The paper used it (true reproduces the paper); off by default because it did not improve held-out accuracy on our data
+  target: RWC                  # target column defining the low/high class
+  threshold: 62                # class label = target < threshold
+
+augmentation:
+  enabled: true                # augment train-val spectra (never test)
+  mode: static                 # static = n_copies fixed copies (paper protocol); online = fresh jitter per mini-batch
+  n_copies: 5                  # augmented copies per spectrum (static mode only)
+  include_original: true       # keep the real spectra as well as the copies (static mode only)
+  offset_percent: 0.06         # offset ~ U(-p*std, +p*std), std of the train-val matrix
+  slope_variation: 0.05        # slope ~ U(1-s, 1+s)
+
+split:
+  val_size: 0.3                # fraction of augmented train-val used for validation
+  group_aware: true            # keep copies of one spectrum on one side; false = random split
+
+model:
+  patch_size: 13               # bands per patch (paper best 13)
+  embed_dim: 8                 # token width after patch reduction (paper best 8)
+  n_layers: 3                  # transformer encoder layers
+  n_heads: 2                   # attention heads (must divide embed_dim)
+  ff_dim: 32                   # feed-forward width inside each encoder layer
+  attn_dropout: 0.1            # dropout inside encoder layers
+  head_hidden: [64, 64, 32]    # widths of the MLP regression head
+  head_dropout: 0.4            # dropout after each head layer
+  pooling: flatten             # flatten (concat tokens), mean, or cls (needs use_cls)
+  use_cls: false               # prepend a learnable [CLS] token
+  tail: drop                   # leftover bands: drop them, or pad = zero-pad to a full patch
+
+training:
+  batch_size: 32               # mini-batch size
+  optimizer: adam              # adam or adamw
+  weight_decay: 1.0e-3         # L2 penalty (paper)
+  loss: mse                    # mse or huber
+  scheduler: cyclic            # cyclic, onecycle, cosine or none
+  base_lr: 1.0e-5              # cyclic: lowest learning rate
+  max_lr: 1.0e-3               # cyclic/onecycle peak learning rate
+  step_size_up: 25             # cyclic: epochs from base_lr to max_lr (stepped every batch)
+  grad_clip: 1.0               # max gradient norm (0 = off)
+  epochs: 1000                 # maximum epochs
+  early_stopping_patience: 100 # stop after this many epochs without val RMSE improvement
+
+evaluation:
+  group_by: Day                # test metrics are also written per value of this meta column
+
+seeds: [42]                    # one run per seed; summary.json reports mean and std
+output_dir: runs/lwc_former    # where results are written
